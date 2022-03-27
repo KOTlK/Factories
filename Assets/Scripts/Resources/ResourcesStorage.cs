@@ -27,6 +27,21 @@ public class ResourcesStorage : IResourceStorage
         }
     }
 
+    public bool HasResource(ResourceType resource)
+    {
+        foreach(var cell in _storagedResources)
+        {
+            if (cell.Resource == resource) return true;
+        }
+        return false;
+    }
+
+    public bool EnoughSpace(int amount)
+    {
+        if (Capacity + amount > _maxCapacity) return false;
+        return true;
+    }
+
     public bool TryAdd(ResourceType resource, int amount)
     {
         if (Capacity + amount > _maxCapacity) return false;
@@ -53,6 +68,7 @@ public class ResourcesStorage : IResourceStorage
         {
             if (cell.Amount - amount < 0) return false;
             cell.Amount -= amount;
+            if (cell.Amount == 0) _storagedResources.Remove(cell);
             StorageUpdated?.Invoke(_storagedResources.ToArray());
             return true;
         }

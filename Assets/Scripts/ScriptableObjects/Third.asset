@@ -12,5 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6ca931e117cc9854783de7c4afd74c7b, type: 3}
   m_Name: Third
   m_EditorClassIdentifier: 
-  <Income>k__BackingField: []
-  <OutCome>k__BackingField: 0
+  <Income>k__BackingField:
+  - Resource: 0
+    Amount: 1
+  - Resource: 1
+    Amount: 1
+  <Outcome>k__BackingField: 2
+  <CraftTime>k__BackingField: 3
