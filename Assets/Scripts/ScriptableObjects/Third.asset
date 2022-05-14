@@ -17,5 +17,7 @@ MonoBehaviour:
     Amount: 1
   - Resource: 1
     Amount: 1
-  <Outcome>k__BackingField: 2
+  <Outcome>k__BackingField:
+    Resource: 2
+    Amount: 1
   <CraftTime>k__BackingField: 3

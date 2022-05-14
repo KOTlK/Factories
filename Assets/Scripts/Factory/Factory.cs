@@ -1,123 +1,151 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Collections;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using UnityEngine;
+using Extensions.Resources;
 
 public class Factory : MonoBehaviour
 {
-    public event Action<CollectionOperation> CollectionCompleted;
+    [SerializeField] private float _resourceMovementTime = 1f;
 
-    [SerializeField] private int _storageCapacity;
-    [SerializeField] private ResourceBlueprint _blueprint;
+    [SerializeField] private ResourceBlueprint _blueprint = null;
 
-    private IResourceStorage _incomeStorage;
-    private IResourceStorage _outcomeStorage;
+    [SerializeField] private ProgressBar _movementView = null;
+    [SerializeField] private ProgressBar _craftingView = null;
 
-    private IResourceStorage _collectedResources;
+    [SerializeField] private MonoBehaviour _incomeStorage = null;
+    [SerializeField] private MonoBehaviour _outcomeStorage = null;
+    [SerializeField] private MonoBehaviour _collectedResources = null;
 
-    private float _collectionProcess;
+    private ResourceCrafter _crafter;
+    private ResourcesMovement _movement;
 
-    private Coroutine _collectionCoroutine;
+    public Guid GUID { get; private set; }
+    
+    public IResourceStorage IncomeStorage => (IResourceStorage)_incomeStorage;
+    public IResourceStorage OutcomeStorage => (IResourceStorage)_outcomeStorage;
+    private IResourceStorage CollectedResources => (IResourceStorage)_collectedResources;
 
-    private void CollectResource(ResourceType resource, int amount)
+
+    private void OnValidate()
     {
-        if (_collectedResources.EnoughSpace(amount) == false)
+        if (_incomeStorage is IResourceStorage && _outcomeStorage is IResourceStorage && _collectedResources is IResourceStorage) return;
+
+        if (_incomeStorage is IResourceStorage == false)
         {
-            CollectionCompleted?.Invoke(new CollectionOperation(CollectionStatus.Failed, CollectionOperationMessage.NotEnoughFreeSpace, this));
-            return;
+            Debug.LogError($"{nameof(_incomeStorage)} should implement {nameof(IResourceStorage)}");
+            _incomeStorage = null;
         }
-        if (_incomeStorage.TryRemove(resource, amount))
+
+        if (_outcomeStorage is IResourceStorage == false)
         {
-            _collectedResources.TryAdd(resource, amount);
-            CollectionCompleted?.Invoke(new CollectionOperation(CollectionStatus.Completed, CollectionOperationMessage.Success, this));
-        } else
+            Debug.LogError($"{nameof(_outcomeStorage)} should implement {nameof(IResourceStorage)}");
+            _outcomeStorage = null;
+        }
+
+        if (_collectedResources is IResourceStorage == false)
         {
-            CollectionCompleted?.Invoke(new CollectionOperation(CollectionStatus.Failed, CollectionOperationMessage.NotEnoughResources, this));
-            return;
+            Debug.LogError($"{nameof(_collectedResources)} should implement {nameof(IResourceStorage)}");
+            _collectedResources = null;
         }
     }
 
-    private IEnumerator ResourceCollection(ResourceType resource, int amount, float movementTime)
+
+    private void Awake()
     {
-        var estimatedTime = 0f;
-
-        while (estimatedTime < movementTime)
-        {
-            estimatedTime += Time.deltaTime;
-            _collectionProcess = estimatedTime / movementTime;
-            yield return null;
-        }
-
-        _collectionProcess = 1f;
-        CollectResource(resource, amount);
-        _collectionProcess = 0f;
-        StopCollectionProcess();
+        GUID = Guid.NewGuid();
+        _crafter = new ResourceCrafter();
+        _movement = new ResourcesMovement();
     }
 
-    private void StartCollectionProcess(ResourceType resource, int amount, float movementTime)
+    private void OnEnable()
     {
-        if (_collectionCoroutine != null) return;
+        CollectedResources.ResourceAdded += _ => TryCraft();
+        _crafter.CraftCompleted += TryCraft;
+        IncomeStorage.ResourceAdded += _ => TryCraft();
 
-        if (_incomeStorage.HasResource(resource) == false)
-        {
-            CollectionCompleted?.Invoke(new CollectionOperation(CollectionStatus.Failed, CollectionOperationMessage.NotEnoughResources, this));
-            return;
-        }
+        _movement.ProgressUpdated += _movementView.ChangeValue;
+        _movement.MovementEnded += DebugMovement;
 
-        if (_collectedResources.EnoughSpace(amount) == false)
-        {
-            CollectionCompleted?.Invoke(new CollectionOperation(CollectionStatus.Failed, CollectionOperationMessage.NotEnoughFreeSpace, this));
-            return;
-        }
+        _crafter.CraftProgressUpdated += _craftingView.ChangeValue;
 
-        _collectionCoroutine = StartCoroutine(ResourceCollection(resource, amount, movementTime));
-
+        TryCraft();
     }
 
-    private void StopCollectionProcess()
+    private void OnDisable()
     {
-        if(_collectionCoroutine != null)
-        {
-            StopCoroutine(_collectionCoroutine);
-            _collectionCoroutine = null;
-        }
-    }
+        CollectedResources.ResourceAdded -= _ => TryCraft();
+        _crafter.CraftCompleted -= TryCraft;
+        IncomeStorage.ResourceAdded -= _ => TryCraft();
 
-    private void Start()
-    {
-        _collectedResources = new ResourcesStorage(_storageCapacity);
-        _incomeStorage = new ResourcesStorage(_storageCapacity);
-        _outcomeStorage = new ResourcesStorage(_storageCapacity);
-        CollectionCompleted += DebugOperation;
-    }
+        _movement.ProgressUpdated -= _movementView.ChangeValue;
+        _movement.MovementEnded -= DebugMovement;
 
-    private void DebugOperation(CollectionOperation operation)
-    {
-        if (operation.Status != CollectionStatus.Completed)
-        {
-            Debug.Log($"{operation.Status}, {operation.Message}, {operation.Factory.name}");
-        }
+        _crafter.CraftProgressUpdated -= _craftingView.ChangeValue;
     }
 
     private void Update()
     {
         if (Input.GetKeyDown(KeyCode.Space))
         {
-            Debug.Log($"{_incomeStorage.TryAdd(ResourceType.First, 2)}, {_incomeStorage.Capacity}");
+            var operation = new MovementOperation(IncomeStorage, ResourceType.First, _resourceMovementTime);
+            _movement.StartMovement(operation);
         }
-        
+
         if (Input.GetKeyDown(KeyCode.LeftShift))
         {
-            Debug.Log($"{_incomeStorage.TryRemove(ResourceType.First, 1)}, {_incomeStorage.Capacity}");
+            var operation = new MovementOperation(IncomeStorage, ResourceType.Second, _resourceMovementTime);
+            _movement.StartMovement(operation);
         }
 
         if (Input.GetKeyDown(KeyCode.LeftControl))
         {
-            StartCollectionProcess(ResourceType.First, 1, 1f);
+            var operation = new MovementOperation(IncomeStorage, ResourceType.Third, _resourceMovementTime);
+            _movement.StartMovement(operation);
         }
-        Debug.Log($"{_collectionProcess}, {_incomeStorage.Capacity}, {_collectedResources.Capacity}");
+    }
+
+    private async void TryCraft()
+    {
+        if (ReadyForCraft())
+        {
+            var crafted = await _crafter.Craft(_blueprint, CollectedResources);
+
+            OutcomeStorage.Add(crafted.Resource);
+            return;
+        } else
+        {
+            CollectResourceForBlueprint(IncomeStorage);
+        }
+
+    }
+
+    private bool ReadyForCraft()
+    {
+        if (_crafter.InProcess) return false;
+        if (CollectedResources.Capacity == CollectedResources.MaxCapacity) return false;
+
+        return CollectedResources.CanCraft(_blueprint);
+    }
+
+    private void CollectResourceForBlueprint(IResourceStorage storage)
+    {
+        if (storage.Capacity == 0) return;
+
+        foreach (var resource in _blueprint.Income)
+        {
+            if (storage.HasResource(resource) == false) continue;
+            if (CollectedResources.HasResource(resource) == true) continue;
+
+            var operation = new MovementOperation(storage, CollectedResources, resource.Resource, _resourceMovementTime);
+            _movement.StartMovement(operation);
+
+            return;
+        }
+
+    }
+
+    private void DebugMovement(EndMovementMessage message)
+    {
+        Debug.Log($"Movement ended with status {message.Status}, {message.Message}, at storage {message.Storage}");
     }
 }

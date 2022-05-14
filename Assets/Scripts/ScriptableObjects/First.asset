@@ -13,5 +13,7 @@ MonoBehaviour:
   m_Name: First
   m_EditorClassIdentifier: 
   <Income>k__BackingField: []
-  <Outcome>k__BackingField: 0
+  <Outcome>k__BackingField:
+    Resource: 0
+    Amount: 1
   <CraftTime>k__BackingField: 1
